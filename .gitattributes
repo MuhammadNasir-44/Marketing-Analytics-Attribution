@@ -1,0 +1,5 @@
+# Keep GitHub's language bar reflecting the project's real language (Python).
+# SQL is a first-class part of this project but small; count notebooks and
+# generated CSVs as data/documentation so they don't skew the stats.
+*.ipynb linguist-documentation
+*.csv  linguist-generated
