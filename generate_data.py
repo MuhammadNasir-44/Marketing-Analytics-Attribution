@@ -218,6 +218,62 @@ def generate_users(spend: pd.DataFrame, rng: np.random.Generator) -> pd.DataFram
 
 
 # --------------------------------------------------------------------------- #
+# Touchpoints
+# --------------------------------------------------------------------------- #
+
+# How likely each channel is to appear as an *assisting* (non-final) touch. This
+# is deliberately skewed toward awareness/nurture channels so that first-touch,
+# last-touch and multi-touch attribution give visibly different answers: Display
+# and Paid Social assist a lot but rarely close, while SEO/Email nurture.
+ASSIST_WEIGHTS: dict[str, float] = {
+    "Display": 0.24,
+    "Paid Social": 0.24,
+    "SEO": 0.17,
+    "Email": 0.15,
+    "Paid Search": 0.12,
+    "Referral": 0.08,
+}
+
+
+def generate_touchpoints(users: pd.DataFrame, rng: np.random.Generator) -> pd.DataFrame:
+    """Ordered multi-touch journeys, one per user, ending in the closing touch.
+
+    The final touch is the user's acquisition channel (as recorded in
+    ``users.csv``); earlier touches are drawn from ``ASSIST_WEIGHTS``. Touch
+    dates are spread over the 30 days before signup, in order, so time-decay
+    attribution has real recency to work with.
+    """
+    assist_channels = list(ASSIST_WEIGHTS)
+    assist_p = np.array(list(ASSIST_WEIGHTS.values()))
+    assist_p = assist_p / assist_p.sum()
+
+    rows: list[dict] = []
+    for user_id, signup_date, closing in zip(
+        users["user_id"], users["signup_date"], users["channel"]
+    ):
+        signup = pd.Timestamp(signup_date)
+        # 1-5 touches, most journeys short.
+        n_touches = int(np.clip(1 + rng.poisson(1.1), 1, 5))
+
+        # Assisting touches (all but the last), then the closing touch.
+        assists = list(rng.choice(assist_channels, size=n_touches - 1, p=assist_p))
+        journey = assists + [closing]
+
+        # Days-before-signup for each touch, ascending so the closing touch is
+        # the most recent (day 0).
+        offsets = np.sort(rng.integers(0, 30, size=n_touches))[::-1]
+        offsets[-1] = 0  # closing touch happens on the signup date
+
+        for seq, (channel, off) in enumerate(zip(journey, offsets), start=1):
+            touch_date = (signup - pd.Timedelta(days=int(off))).date().isoformat()
+            rows.append(
+                dict(user_id=user_id, seq=seq, channel=channel, touch_date=touch_date)
+            )
+
+    return pd.DataFrame(rows)
+
+
+# --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
 
@@ -237,6 +293,11 @@ def main() -> None:
     print(f"users.csv        {len(users):>6,} rows  "
           f"({len(paying):,} paying, "
           f"${paying['commission_revenue'].sum():,.0f} commission revenue)")
+
+    touchpoints = generate_touchpoints(users, rng)
+    touchpoints.to_csv(DATA_DIR / "touchpoints.csv", index=False)
+    print(f"touchpoints.csv  {len(touchpoints):>6,} rows  "
+          f"({len(touchpoints) / len(users):.2f} touches per user)")
 
 
 if __name__ == "__main__":
