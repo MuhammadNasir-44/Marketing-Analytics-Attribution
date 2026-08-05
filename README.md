@@ -1,0 +1,123 @@
+# Marketing Analytics & Attribution
+
+End-to-end **marketing / growth analytics** on a realistic multi-market
+acquisition dataset: channel performance, unit economics (CAC / ROAS / LTV),
+multi-touch attribution, retention & payback, budget optimisation, anomaly
+detection and experimentation — with the analysis run in both **Python** and
+**SQL**, and an executive **Streamlit** dashboard on top.
+
+The guiding principle is a commercial one: **optimise for revenue and payback,
+not vanity metrics**. Every metric here ladders up to "where should the next
+marketing dollar go?"
+
+> Data is synthetic but fully reproducible (`generate_data.py`, fixed seed) and
+> built with realistic economics — including a deliberately planted spend
+> anomaly for the anomaly-detection work.
+
+---
+
+## The business
+
+A subscription / affiliate business that acquires users across six channels
+(**Paid Search, Paid Social, Display, Email, SEO, Referral**) in five markets
+(**UK, US, DE, BR, IN**). Users who activate pay a recurring monthly commission,
+so each channel has both an acquisition cost and a downstream lifetime value.
+
+### Dataset (`data/`)
+
+| Table | Grain | Key fields |
+|-------|-------|-----------|
+| `spend.csv` | day × channel × country × campaign | spend, impressions, clicks |
+| `users.csv` | one acquired user | signup date, country, channel, converted, months_active, commission_revenue, ltv |
+| `touchpoints.csv` | one marketing touch | user_id, seq, channel, touch_date |
+
+Users are generated **from** the paid clicks, so cost-per-acquisition and ROAS
+are internally consistent rather than arbitrary.
+
+---
+
+## Day 1 — Channel performance (Objective 1)
+
+*Where is the money going, and what is it bringing back?*
+
+![Spend vs return by channel](images/channel_spend_vs_roas.png)
+![CAC by channel](images/channel_cac.png)
+
+**Channel summary** (full year — see [`images/channel_summary.csv`](images/channel_summary.csv)):
+
+| Channel | Spend | Customers | CAC | Revenue | ROAS |
+|---|--:|--:|--:|--:|--:|
+| SEO | $66k | 5,279 | $13 | $882k | **13.3** |
+| Email | $149k | 6,252 | $24 | $1.01m | **6.8** |
+| Referral | $264k | 3,120 | $85 | $424k | 1.6 |
+| Paid Search | $1.48m | 12,223 | $121 | $1.72m | 1.16 |
+| Paid Social | $1.26m | 7,959 | $158 | $749k | 0.60 |
+| Display | $497k | 1,003 | $496 | $69k | 0.14 |
+
+**Blended:** ~$3.7m spend → ~$4.8m revenue, **1.30 ROAS**, ~$104 CAC across 35.8k paying customers.
+
+**What stands out**
+
+- **The budget is upside-down.** The two highest-return channels — SEO (13.3×)
+  and Email (6.8×) — receive under 6% of spend combined, while Display and Paid
+  Social (both below the 1.0 break-even line) absorb nearly half of it.
+- **Display is loss-making**: a $496 CAC against a ~$90 lifetime value. A clear
+  pause / rework candidate (revisited on Day 5).
+- **Paid Social underperforms (0.60 ROAS)** — and part of that is a Brazil spend
+  spike that never converted, surfaced later by the Day 5 anomaly detector.
+- **Paid Search is the workhorse**: the largest volume of customers, at an
+  acceptable-but-thin 1.16 ROAS — a margin-optimisation opportunity, not a cut.
+- By market, **US and UK** clear break-even comfortably while **BR and IN** sit
+  below it — a multi-market efficiency gap to unpack.
+
+The same analysis is expressed in SQL in [`sql/queries.sql`](sql/queries.sql)
+(run via `sql_analysis.py`), with results saved to `sql_output/`.
+
+---
+
+## Roadmap
+
+| Day | Focus |
+|-----|-------|
+| **1** | **Data generation, SQL layer, channel performance** ✅ |
+| 2 | Unit economics — CAC / ROAS by channel & country, efficiency frontier |
+| 3 | Attribution — first / last / linear / time-decay / position-based / data-driven |
+| 4 | LTV, retention cohorts, payback period, LTV:CAC |
+| 5 | Growth opportunities, anomaly detection, budget reallocation |
+| 6 | CRO & experimentation — incrementality, geo-holdout lift, sample-size |
+| 7 | Streamlit executive dashboard + written report |
+
+---
+
+## Tech stack
+
+Python (pandas, numpy, matplotlib), SQL (SQLite), Streamlit + Plotly for the
+dashboard, pytest for tests.
+
+## Running it
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+python generate_data.py       # writes data/*.csv (reproducible, seeded)
+python sql_analysis.py        # runs sql/queries.sql, writes sql_output/*.csv
+python channel_performance.py # writes images/ charts + channel_summary.csv
+```
+
+## Repository layout
+
+```
+generate_data.py        synthetic dataset generator (spend, users, touchpoints)
+channel_performance.py  Day 1 channel analysis + charts
+sql_analysis.py         loads the CSVs into SQLite and runs the named queries
+sql/queries.sql         channel-performance SQL
+data/                   generated CSVs
+sql_output/             SQL query results (CSV)
+images/                 charts
+tests/                  pytest suite (from Day 6)
+```
+
+---
+
+*Author: Muhammad Nasiruddin*
