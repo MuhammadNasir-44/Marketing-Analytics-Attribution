@@ -49,19 +49,21 @@ END_DATE = pd.Timestamp("2026-06-30")
 # per-country figures; seasonality, country weighting and noise are layered on
 # top. ``cpm`` is cost per 1,000 impressions, ``ctr`` the click-through rate,
 # ``cvr`` the click-to-signup rate, ``base_spend`` the typical daily spend in a
-# mid-size market. ``rev`` and ``months`` drive lifetime value downstream.
+# mid-size market. ``arpu`` (avg monthly commission per paying user), ``months``
+# (expected lifetime) and ``activation`` (share of signups that start paying)
+# drive lifetime value downstream.
 CHANNELS: dict[str, dict[str, float]] = {
-    # channel        base_spend  cpm    ctr     cvr     rev   months
     # cpm is set so the implied CPC (cpm / (ctr * 1000)) is realistic per channel
-    # e.g. Paid Search ~$1.60, Paid Social ~$0.70, Display ~$0.60.
-    # cvr here is the click -> signup rate (~0.5-2%); combined with CPC it sets a
-    # realistic customer-acquisition cost. rev/months drive lifetime value.
-    "Paid Search": dict(base_spend=900, cpm=72.0, ctr=0.045, cvr=0.0190, rev=90, months=9),
-    "Paid Social": dict(base_spend=750, cpm=13.0, ctr=0.018, cvr=0.0080, rev=70, months=6),
-    "Display": dict(base_spend=300, cpm=5.0, ctr=0.008, cvr=0.0025, rev=55, months=5),
-    "Email": dict(base_spend=90, cpm=9.0, ctr=0.090, cvr=0.0060, rev=110, months=12),
-    "SEO": dict(base_spend=40, cpm=7.0, ctr=0.070, cvr=0.0120, rev=120, months=14),
-    "Referral": dict(base_spend=160, cpm=45.0, ctr=0.050, cvr=0.0170, rev=100, months=11),
+    # e.g. Paid Search ~$1.60, Paid Social ~$0.70, Display ~$0.60. cvr is the
+    # click -> signup rate (~0.5-2%); with CPC it sets a realistic acquisition
+    # cost. arpu * months gives lifetime value, tuned so high-intent channels
+    # clear a healthy LTV:CAC while Display runs at a loss.
+    "Paid Search": dict(base_spend=900, cpm=72.0, ctr=0.045, cvr=0.0190, arpu=28, months=9, activation=0.70),
+    "Paid Social": dict(base_spend=750, cpm=13.0, ctr=0.018, cvr=0.0080, arpu=22, months=6, activation=0.60),
+    "Display": dict(base_spend=300, cpm=5.0, ctr=0.008, cvr=0.0025, arpu=18, months=5, activation=0.50),
+    "Email": dict(base_spend=90, cpm=9.0, ctr=0.090, cvr=0.0060, arpu=30, months=12, activation=0.72),
+    "SEO": dict(base_spend=40, cpm=7.0, ctr=0.070, cvr=0.0120, arpu=30, months=14, activation=0.68),
+    "Referral": dict(base_spend=160, cpm=45.0, ctr=0.050, cvr=0.0170, arpu=26, months=11, activation=0.66),
 }
 
 # Markets (multi-country). The weight scales spend and volume; ``cvr_mult`` and
@@ -157,6 +159,65 @@ def generate_spend(rng: np.random.Generator) -> pd.DataFrame:
 
 
 # --------------------------------------------------------------------------- #
+# Users
+# --------------------------------------------------------------------------- #
+
+def generate_users(spend: pd.DataFrame, rng: np.random.Generator) -> pd.DataFrame:
+    """Acquired users, generated from the paid clicks so CAC/ROAS are coherent.
+
+    Daily signups per channel/country are Poisson-distributed around
+    ``clicks * cvr * country_cvr_mult``. A share of signups (``activation``)
+    become paying customers; those carry a monthly ARPU (with market and
+    per-user variation), an observed tenure censored by how long ago they
+    signed up, and a modelled lifetime value.
+    """
+    users: list[dict] = []
+    uid = 0
+    for _, r in spend.iterrows():
+        channel, country = r["channel"], r["country"]
+        ch, co = CHANNELS[channel], COUNTRIES[country]
+        signup_date = pd.Timestamp(r["date"])
+
+        expected = r["clicks"] * ch["cvr"] * co["cvr_mult"]
+        n_signups = rng.poisson(expected)
+        if n_signups == 0:
+            continue
+
+        elapsed_months = max((END_DATE - signup_date).days / 30.0, 0.3)
+        for _ in range(n_signups):
+            uid += 1
+            paying = rng.random() < ch["activation"]
+            if paying:
+                # Observed tenure: an exponential lifetime, censored by how long
+                # the user has actually had to be active.
+                lifetime = rng.exponential(ch["months"])
+                months_active = int(np.clip(np.ceil(min(lifetime, elapsed_months)), 1, None))
+                arpu = ch["arpu"] * co["rev_mult"] * rng.lognormal(0.0, 0.35)
+                commission_revenue = round(months_active * arpu, 2)
+                ltv = round(ch["months"] * ch["arpu"] * co["rev_mult"], 2)
+            else:
+                months_active = 0
+                commission_revenue = 0.0
+                ltv = 0.0
+
+            users.append(
+                dict(
+                    user_id=f"U{uid:06d}",
+                    signup_date=signup_date.date().isoformat(),
+                    country=country,
+                    channel=channel,
+                    converted=int(paying),
+                    months_active=months_active,
+                    commission_revenue=commission_revenue,
+                    ltv=ltv,
+                )
+            )
+
+    df = pd.DataFrame(users)
+    return df.sort_values("signup_date").reset_index(drop=True)
+
+
+# --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
 
@@ -169,6 +230,13 @@ def main() -> None:
     print(f"spend.csv        {len(spend):>6,} rows  "
           f"(${spend['spend'].sum():,.0f} total spend, "
           f"{spend['clicks'].sum():,.0f} clicks)")
+
+    users = generate_users(spend, rng)
+    users.to_csv(DATA_DIR / "users.csv", index=False)
+    paying = users[users["converted"] == 1]
+    print(f"users.csv        {len(users):>6,} rows  "
+          f"({len(paying):,} paying, "
+          f"${paying['commission_revenue'].sum():,.0f} commission revenue)")
 
 
 if __name__ == "__main__":
