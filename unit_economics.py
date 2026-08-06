@@ -115,6 +115,37 @@ def plot_cac_by_country(co: pd.DataFrame, blended_cac: float) -> Path:
     return out
 
 
+def plot_roas_by_channel(ch: pd.DataFrame, blended_roas: float) -> Path:
+    """ROAS per channel against break-even (1.0) and the blended average.
+
+    Makes the 'blended vs per-channel' point visually: the blended number sits
+    above break-even, but most individual channels sit below it -- the average
+    is carried by SEO and Email.
+    """
+    d = ch.sort_values("roas", ascending=False)
+    fig, ax = plt.subplots(figsize=(9, 5))
+    colors = [PALETTE[2] if r >= 1 else PALETTE[4] for r in d["roas"]]
+    bars = ax.bar(d.index, d["roas"], color=colors, alpha=0.9)
+
+    ax.axhline(1.0, color="grey", ls="-", lw=1)
+    ax.text(len(d) - 0.5, 1.05, "break-even", color="grey", ha="right", fontsize=9)
+    ax.axhline(blended_roas, color=PALETTE[5], ls="--", lw=1.5)
+    ax.text(0, blended_roas + 0.15, f"blended {blended_roas:.2f}",
+            color=PALETTE[5], fontsize=9)
+
+    ax.set_ylabel("ROAS (revenue / spend)")
+    ax.set_title("ROAS by channel vs break-even and blended average",
+                 fontweight="bold", loc="left")
+    for bar, v in zip(bars, d["roas"]):
+        ax.text(bar.get_x() + bar.get_width() / 2, v + 0.15, f"{v:.2f}",
+                ha="center", fontsize=9)
+    fig.tight_layout()
+    out = IMG_DIR / "roas_by_channel.png"
+    fig.savefig(out)
+    plt.close(fig)
+    return out
+
+
 def main() -> None:
     IMG_DIR.mkdir(exist_ok=True)
     spend, users = load()
@@ -134,7 +165,8 @@ def main() -> None:
     print(co[["spend", "customers", "cac", "arpc", "ltv_cac", "roas"]].round(2).to_string())
 
     p1 = plot_cac_by_country(co, b["cac"])
-    print(f"\nSaved chart: {p1.name}")
+    p2 = plot_roas_by_channel(ch, b["roas"])
+    print(f"\nSaved charts: {p1.name}, {p2.name}")
 
 
 if __name__ == "__main__":
