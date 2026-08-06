@@ -146,6 +146,43 @@ def plot_roas_by_channel(ch: pd.DataFrame, blended_roas: float) -> Path:
     return out
 
 
+def plot_efficiency_frontier(ch: pd.DataFrame, blended_cac: float) -> Path:
+    """CAC vs customer volume -- the acquisition efficiency frontier.
+
+    The ideal channel is bottom-right: low CAC *and* high volume. Bubble area is
+    spend; colour is LTV:CAC health (green >= 3, amber >= 1, red < 1). This is
+    the one chart that frames the whole reallocation decision -- which channels
+    can absorb more budget, and which are volume dead-ends.
+    """
+    def health(r: float) -> str:
+        return PALETTE[2] if r >= 3 else (PALETTE[3] if r >= 1 else PALETTE[4])
+
+    fig, ax = plt.subplots(figsize=(9, 6))
+    sizes = ch["spend"] / ch["spend"].max() * 2200 + 120
+    ax.scatter(ch["customers"], ch["cac"], s=sizes,
+               c=[health(r) for r in ch["ltv_cac"]], alpha=0.75, edgecolors="white")
+
+    ax.axhline(blended_cac, color="grey", ls="--", lw=1)
+    ax.text(ch["customers"].max(), blended_cac * 1.03,
+            f"blended CAC ${blended_cac:,.0f}", color="grey", ha="right", fontsize=9)
+
+    for name, r in ch.iterrows():
+        ax.annotate(f"{name}\nLTV:CAC {r['ltv_cac']:.1f}",
+                    (r["customers"], r["cac"]),
+                    textcoords="offset points", xytext=(10, 8), fontsize=9)
+
+    ax.set_xlabel("Customers acquired (volume)")
+    ax.set_ylabel("Customer acquisition cost ($)")
+    ax.set_title("Acquisition efficiency frontier  (bubble = spend)",
+                 fontweight="bold", loc="left")
+    ax.margins(0.15)
+    fig.tight_layout()
+    out = IMG_DIR / "efficiency_frontier.png"
+    fig.savefig(out)
+    plt.close(fig)
+    return out
+
+
 def main() -> None:
     IMG_DIR.mkdir(exist_ok=True)
     spend, users = load()
@@ -166,7 +203,8 @@ def main() -> None:
 
     p1 = plot_cac_by_country(co, b["cac"])
     p2 = plot_roas_by_channel(ch, b["roas"])
-    print(f"\nSaved charts: {p1.name}, {p2.name}")
+    p3 = plot_efficiency_frontier(ch, b["cac"])
+    print(f"\nSaved charts: {p1.name}, {p2.name}, {p3.name}")
 
 
 if __name__ == "__main__":
