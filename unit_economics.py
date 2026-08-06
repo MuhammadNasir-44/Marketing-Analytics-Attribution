@@ -95,18 +95,46 @@ def blended(df: pd.DataFrame) -> dict[str, float]:
     }
 
 
+def plot_cac_by_country(co: pd.DataFrame, blended_cac: float) -> Path:
+    """CAC per market against the blended average (multi-market efficiency)."""
+    d = co.sort_values("cac")
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    colors = [PALETTE[2] if c <= blended_cac else PALETTE[4] for c in d["cac"]]
+    ax.bar(d.index, d["cac"], color=colors, alpha=0.9)
+    ax.axhline(blended_cac, color="grey", ls="--", lw=1)
+    ax.text(len(d) - 0.5, blended_cac * 1.02, f"blended ${blended_cac:,.0f}",
+            color="grey", ha="right", fontsize=9)
+    ax.set_ylabel("Customer acquisition cost ($)")
+    ax.set_title("CAC by market", fontweight="bold", loc="left")
+    for x, v in enumerate(d["cac"]):
+        ax.text(x, v + 2, f"${v:,.0f}", ha="center", fontsize=9)
+    fig.tight_layout()
+    out = IMG_DIR / "cac_by_country.png"
+    fig.savefig(out)
+    plt.close(fig)
+    return out
+
+
 def main() -> None:
     IMG_DIR.mkdir(exist_ok=True)
     spend, users = load()
 
     ch = channel_economics(spend, users)
     ch.to_csv(IMG_DIR / "unit_economics_by_channel.csv")
+    co = country_economics(spend, users)
+    co.to_csv(IMG_DIR / "unit_economics_by_country.csv")
 
     b = blended(ch)
     cols = ["spend", "customers", "cac", "arpc", "avg_ltv", "ltv_cac", "roas"]
     print("Unit economics by channel\n")
     print(ch[cols].round(2).to_string())
-    print(f"\nBlended: CAC ${b['cac']:.2f} | ROAS {b['roas']:.2f} | LTV:CAC {b['ltv_cac']:.2f}")
+    print(f"\nBlended: CAC ${b['cac']:.2f} | ROAS {b['roas']:.2f} | LTV:CAC {b['ltv_cac']:.2f}\n")
+
+    print("Unit economics by market\n")
+    print(co[["spend", "customers", "cac", "arpc", "ltv_cac", "roas"]].round(2).to_string())
+
+    p1 = plot_cac_by_country(co, b["cac"])
+    print(f"\nSaved chart: {p1.name}")
 
 
 if __name__ == "__main__":
