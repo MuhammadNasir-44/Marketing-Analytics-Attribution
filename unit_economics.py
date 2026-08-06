@@ -183,6 +183,46 @@ def plot_efficiency_frontier(ch: pd.DataFrame, blended_cac: float) -> Path:
     return out
 
 
+def channel_country_cac(spend: pd.DataFrame, users: pd.DataFrame) -> pd.DataFrame:
+    """CAC for every channel x market pair (spend / paying customers)."""
+    media = spend.groupby(["channel", "country"])["spend"].sum()
+    cust = (
+        users[users["converted"] == 1]
+        .groupby(["channel", "country"])["user_id"].count()
+        .rename("customers")
+    )
+    cac = (media / cust).rename("cac").reset_index()
+    return cac.pivot(index="channel", columns="country", values="cac")
+
+
+def plot_cac_heatmap(pivot: pd.DataFrame) -> Path:
+    """Heatmap of CAC across channel x market."""
+    fig, ax = plt.subplots(figsize=(8, 5))
+    data = pivot.to_numpy(dtype=float)
+    im = ax.imshow(data, cmap="RdYlGn_r", aspect="auto")
+
+    ax.set_xticks(range(pivot.shape[1]), pivot.columns)
+    ax.set_yticks(range(pivot.shape[0]), pivot.index)
+    for i in range(pivot.shape[0]):
+        for j in range(pivot.shape[1]):
+            v = data[i, j]
+            # Choose label colour for contrast against the cell.
+            lo, hi = np.nanmin(data), np.nanmax(data)
+            frac = (v - lo) / (hi - lo) if hi > lo else 0.5
+            colour = "white" if frac > 0.6 else "black"
+            ax.text(j, i, f"${v:,.0f}", ha="center", va="center",
+                    color=colour, fontsize=9)
+
+    ax.set_title("CAC by channel x market ($)", fontweight="bold", loc="left")
+    fig.colorbar(im, ax=ax, label="CAC ($)", shrink=0.85)
+    ax.grid(False)
+    fig.tight_layout()
+    out = IMG_DIR / "cac_channel_country_heatmap.png"
+    fig.savefig(out)
+    plt.close(fig)
+    return out
+
+
 def main() -> None:
     IMG_DIR.mkdir(exist_ok=True)
     spend, users = load()
@@ -201,10 +241,14 @@ def main() -> None:
     print("Unit economics by market\n")
     print(co[["spend", "customers", "cac", "arpc", "ltv_cac", "roas"]].round(2).to_string())
 
+    pivot = channel_country_cac(spend, users)
+    pivot.to_csv(IMG_DIR / "cac_channel_country.csv")
+
     p1 = plot_cac_by_country(co, b["cac"])
     p2 = plot_roas_by_channel(ch, b["roas"])
     p3 = plot_efficiency_frontier(ch, b["cac"])
-    print(f"\nSaved charts: {p1.name}, {p2.name}, {p3.name}")
+    p4 = plot_cac_heatmap(pivot)
+    print(f"\nSaved charts: {p1.name}, {p2.name}, {p3.name}, {p4.name}")
 
 
 if __name__ == "__main__":
