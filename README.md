@@ -75,12 +75,61 @@ The same analysis is expressed in SQL in [`sql/queries.sql`](sql/queries.sql)
 
 ---
 
+## Day 2 — Unit economics (Objective 2)
+
+*What does a customer cost, what are they worth, and where is that math broken?*
+
+Building on Day 1, `unit_economics.py` adds the metrics a growth team steers on —
+**CAC, ROAS, ARPC** (avg revenue per customer) and **LTV:CAC** — cut by channel,
+by market, and by channel × market, each benchmarked against the blended average.
+The same views are defined in SQL ([`sql/unit_economics_views.sql`](sql/unit_economics_views.sql), run via `sql_views.py`).
+
+**Unit economics by channel** (see [`images/unit_economics_by_channel.csv`](images/unit_economics_by_channel.csv)):
+
+| Channel | Spend | Customers | CAC | ARPC | Avg LTV | LTV:CAC | ROAS |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| SEO | $66k | 5,279 | $13 | $167 | $452 | **35.9** | 13.3 |
+| Email | $149k | 6,252 | $24 | $161 | $391 | **16.4** | 6.8 |
+| Referral | $264k | 3,120 | $85 | $136 | $307 | 3.6 | 1.6 |
+| Paid Search | $1.48m | 12,223 | $121 | $140 | $272 | 2.2 | 1.16 |
+| Paid Social | $1.26m | 7,959 | $158 | $94 | $142 | 0.9 | 0.60 |
+| Display | $497k | 1,003 | $496 | $69 | $98 | **0.2** | 0.14 |
+
+**Blended:** CAC ~$104 · ROAS 1.30 · **LTV:CAC 2.78**.
+
+![ROAS by channel](images/roas_by_channel.png)
+![Acquisition efficiency frontier](images/efficiency_frontier.png)
+
+**What stands out**
+
+- **Realised ROAS and lifetime LTV:CAC tell different stories — both matter.**
+  Referral and Paid Search look marginal on realised ROAS (1.6 and 1.16) but
+  clear a healthy LTV:CAC (3.6 and 2.2) once the *full* customer lifetime is
+  counted. Judging paid channels on first-order ROAS alone would wrongly cut
+  them; judging on LTV:CAC alone would ignore cash-flow timing (payback, Day 4).
+- **The blended 1.30 ROAS is a mirage.** Four of six channels sit *below*
+  break-even; the average is propped up by SEO and Email. A single blended KPI
+  would completely hide where the money is actually made or lost.
+- **The efficiency frontier frames the reallocation.** SEO and Email are cheap
+  *and* healthy but low-volume (room to scale); Paid Search is the high-volume
+  workhorse; Paid Social is a large, low-health spend; Display is a low-volume,
+  loss-making dead-end.
+- **Market gap:** US/UK acquire at ~$91–95 CAC and >3.5 LTV:CAC, while **BR and
+  IN** run at $129–145 CAC and fall *below* a 1.0 LTV:CAC — losing money on
+  every customer.
+- **CAC hides in the cross-section.** The channel × market heatmap
+  ([`images/cac_channel_country_heatmap.png`](images/cac_channel_country_heatmap.png))
+  exposes the worst pockets — Display in India ($715) and Brazil ($644) — that a
+  channel-only or market-only view averages away.
+
+---
+
 ## Roadmap
 
 | Day | Focus |
 |-----|-------|
 | **1** | **Data generation, SQL layer, channel performance** ✅ |
-| 2 | Unit economics — CAC / ROAS by channel & country, efficiency frontier |
+| **2** | **Unit economics — CAC / ROAS / LTV:CAC by channel & market, efficiency frontier** ✅ |
 | 3 | Attribution — first / last / linear / time-decay / position-based / data-driven |
 | 4 | LTV, retention cohorts, payback period, LTV:CAC |
 | 5 | Growth opportunities, anomaly detection, budget reallocation |
@@ -110,8 +159,11 @@ python channel_performance.py # writes images/ charts + channel_summary.csv
 ```
 generate_data.py        synthetic dataset generator (spend, users, touchpoints)
 channel_performance.py  Day 1 channel analysis + charts
+unit_economics.py       Day 2 CAC / ROAS / LTV:CAC by channel, market & matrix
 sql_analysis.py         loads the CSVs into SQLite and runs the named queries
+sql_views.py            builds the unit-economics SQL views and materialises them
 sql/queries.sql         channel-performance SQL
+sql/unit_economics_views.sql  reusable CAC / ROAS / LTV:CAC views
 data/                   generated CSVs
 sql_output/             SQL query results (CSV)
 images/                 charts
