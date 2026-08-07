@@ -156,6 +156,78 @@ def position_based(
     return credit
 
 
+# --------------------------------------------------------------------------- #
+# Data-driven: Markov-chain removal effect
+# --------------------------------------------------------------------------- #
+
+def _transition_counts(journeys: pd.DataFrame) -> dict[tuple[str, str], int]:
+    """Count state-to-state transitions across *all* journeys.
+
+    Each journey becomes  start -> ch1 -> ... -> chN -> (conv | null),  where the
+    terminal is ``conv`` for paying users and ``null`` otherwise. Learning from
+    the non-converting paths too is what makes this data-driven rather than a
+    fixed rule.
+    """
+    counts: dict[tuple[str, str], int] = {}
+    for _, g in journeys.groupby("user_id", sort=False):
+        seq = ["start"] + list(g["channel"])
+        seq.append("conv" if g["converted"].iloc[0] == 1 else "null")
+        for a, b in zip(seq[:-1], seq[1:]):
+            counts[(a, b)] = counts.get((a, b), 0) + 1
+    return counts
+
+
+def _conversion_probability(
+    counts: dict[tuple[str, str], int], channels: list[str], removed: str | None = None
+) -> float:
+    """P(reaching ``conv`` from ``start``) in the absorbing Markov chain.
+
+    If ``removed`` is set, that channel is deleted from the graph and every
+    transition into it is redirected to ``null`` (the conversion path is broken)
+    -- the basis of the removal effect.
+    """
+    transient = ["start"] + [c for c in channels if c != removed]
+    absorbing = ["conv", "null"]
+    all_states = transient + absorbing
+    t_idx = {s: i for i, s in enumerate(transient)}
+    a_idx = {s: i for i, s in enumerate(all_states)}
+
+    M = np.zeros((len(transient), len(all_states)))
+    for (a, b), n in counts.items():
+        if a == removed:
+            continue                      # removed channel is never reached
+        tgt = "null" if b == removed else b
+        M[t_idx[a], a_idx[tgt]] += n
+
+    row_sums = M.sum(axis=1, keepdims=True)
+    row_sums[row_sums == 0] = 1.0
+    P = M / row_sums
+
+    n_t = len(transient)
+    Q = P[:, :n_t]
+    R = P[:, n_t:]
+    N = np.linalg.inv(np.eye(n_t) - Q)
+    B = N @ R                              # absorption probabilities
+    return float(B[t_idx["start"], all_states.index("conv") - n_t])
+
+
+def markov(journeys: pd.DataFrame, channels: list[str], total: float) -> pd.Series:
+    """Data-driven credit from Markov removal effects, scaled to ``total``.
+
+    The removal effect of a channel is the relative drop in conversion
+    probability when it is taken out of the journeys; normalising the removal
+    effects distributes the conversions across channels.
+    """
+    counts = _transition_counts(journeys)
+    baseline = _conversion_probability(counts, channels)
+    effects = {
+        c: 1.0 - _conversion_probability(counts, channels, removed=c) / baseline
+        for c in channels
+    }
+    eff = pd.Series(effects, index=channels)
+    return eff / eff.sum() * total
+
+
 if __name__ == "__main__":
     journeys, channels = load_journeys()
     paths = _converting_paths(journeys)
@@ -168,6 +240,7 @@ if __name__ == "__main__":
         "linear": linear(paths, channels),
         "time_decay": time_decay(recency, channels),
         "position_based": position_based(paths, channels),
+        "data_driven": markov(journeys, channels, total=len(paths)),
     })
     print(comparison.round(0).to_string())
     print("\ncolumn totals:", comparison.sum().round(0).to_dict())
