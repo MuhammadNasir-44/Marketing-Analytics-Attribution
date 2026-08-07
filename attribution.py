@@ -128,6 +128,34 @@ def time_decay(
     return credit
 
 
+def position_based(
+    paths: list[list[str]], channels: list[str],
+    first_weight: float = 0.4, last_weight: float = 0.4,
+) -> pd.Series:
+    """U-shaped credit: 40% first touch, 40% last, 20% split across the middle.
+
+    Single-touch journeys take the full credit; two-touch journeys split the
+    first/last weights only (re-normalised), since there is no middle.
+    """
+    credit = pd.Series(0.0, index=channels)
+    mid_weight = 1.0 - first_weight - last_weight
+    for p in paths:
+        n = len(p)
+        if n == 1:
+            credit[p[0]] += 1.0
+        elif n == 2:
+            total = first_weight + last_weight
+            credit[p[0]] += first_weight / total
+            credit[p[-1]] += last_weight / total
+        else:
+            credit[p[0]] += first_weight
+            credit[p[-1]] += last_weight
+            share = mid_weight / (n - 2)
+            for c in p[1:-1]:
+                credit[c] += share
+    return credit
+
+
 if __name__ == "__main__":
     journeys, channels = load_journeys()
     paths = _converting_paths(journeys)
@@ -139,6 +167,7 @@ if __name__ == "__main__":
         "last_touch": last_touch(paths, channels),
         "linear": linear(paths, channels),
         "time_decay": time_decay(recency, channels),
+        "position_based": position_based(paths, channels),
     })
     print(comparison.round(0).to_string())
     print("\ncolumn totals:", comparison.sum().round(0).to_dict())
