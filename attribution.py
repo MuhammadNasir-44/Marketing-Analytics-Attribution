@@ -63,6 +63,24 @@ def _converting_paths(journeys: pd.DataFrame) -> list[list[str]]:
     return [list(g["channel"]) for _, g in conv.groupby("user_id", sort=False)]
 
 
+def _converting_paths_with_recency(
+    journeys: pd.DataFrame,
+) -> list[tuple[list[str], np.ndarray]]:
+    """Per converting user: (channels, days-before-conversion for each touch).
+
+    Conversion is taken to happen at the last (most recent) touch, so the
+    closing touch has recency 0. Used by the time-decay model.
+    """
+    conv = journeys[journeys["converted"] == 1].copy()
+    conv["touch_date"] = pd.to_datetime(conv["touch_date"])
+    out: list[tuple[list[str], np.ndarray]] = []
+    for _, g in conv.groupby("user_id", sort=False):
+        conv_date = g["touch_date"].max()
+        days_before = (conv_date - g["touch_date"]).dt.days.to_numpy(dtype=float)
+        out.append((list(g["channel"]), days_before))
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # Heuristic (rules-based) models
 # --------------------------------------------------------------------------- #
@@ -81,13 +99,46 @@ def last_touch(paths: list[list[str]], channels: list[str]) -> pd.Series:
     return credit
 
 
+def linear(paths: list[list[str]], channels: list[str]) -> pd.Series:
+    """Equal credit to every touch in the journey."""
+    credit = pd.Series(0.0, index=channels)
+    for p in paths:
+        share = 1.0 / len(p)
+        for c in p:
+            credit[c] += share
+    return credit
+
+
+def time_decay(
+    journeys_with_recency: list[tuple[list[str], np.ndarray]],
+    channels: list[str],
+    half_life: float = TIME_DECAY_HALFLIFE_DAYS,
+) -> pd.Series:
+    """Exponential decay: touches closer to conversion get more credit.
+
+    Weight for a touch that happened ``d`` days before conversion is
+    ``0.5 ** (d / half_life)``; weights are normalised to one conversion.
+    """
+    credit = pd.Series(0.0, index=channels)
+    for path, days_before in journeys_with_recency:
+        weights = 0.5 ** (days_before / half_life)
+        weights = weights / weights.sum()
+        for c, w in zip(path, weights):
+            credit[c] += w
+    return credit
+
+
 if __name__ == "__main__":
     journeys, channels = load_journeys()
     paths = _converting_paths(journeys)
+    recency = _converting_paths_with_recency(journeys)
     print(f"{len(paths):,} converting journeys, {len(channels)} channels\n")
 
     comparison = pd.DataFrame({
         "first_touch": first_touch(paths, channels),
         "last_touch": last_touch(paths, channels),
+        "linear": linear(paths, channels),
+        "time_decay": time_decay(recency, channels),
     })
     print(comparison.round(0).to_string())
+    print("\ncolumn totals:", comparison.sum().round(0).to_dict())
