@@ -124,13 +124,66 @@ The same views are defined in SQL ([`sql/unit_economics_views.sql`](sql/unit_eco
 
 ---
 
+## Day 3 — Multi-touch attribution (Objective 2)
+
+*Which channels actually deserve credit for a conversion — not just the last click?*
+
+`attribution.py` credits each of the 35,836 converting journeys in
+`touchpoints.csv` across **six models**: first-touch, last-touch, linear,
+time-decay, position-based (U-shaped), and a **data-driven Markov removal
+effect** that learns from non-converting paths too. Every model conserves the
+total (35,836 conversions), so the columns are directly comparable.
+
+![Attribution by model](images/attribution_model_comparison.png)
+
+**Share of credit by model** (%, see [`images/attribution_share_by_model.csv`](images/attribution_share_by_model.csv)):
+
+| Channel | First | Last | Linear | Time-decay | Position | **Data-driven** |
+|---|--:|--:|--:|--:|--:|--:|
+| Paid Search | 19.4 | **34.1** | 25.5 | 30.8 | 26.1 | 23.3 |
+| Paid Social | 23.2 | 22.2 | 22.9 | 22.4 | 22.8 | 21.7 |
+| Email | 15.9 | 17.4 | 16.5 | 17.1 | 16.6 | 16.4 |
+| SEO | 16.1 | 14.7 | 15.6 | 15.1 | 15.5 | 16.0 |
+| Display | 17.1 | **2.8** | 11.2 | 6.0 | 10.6 | **13.6** |
+| Referral | 8.2 | 8.7 | 8.4 | 8.6 | 8.4 | 9.0 |
+
+![Last-touch bias](images/attribution_lasttouch_bias.png)
+
+**What stands out**
+
+- **Last-touch is badly biased, and now we can quantify it.** Against the
+  data-driven model it **over-credits Paid Search by +46%** (the closer) and
+  **under-credits Display by −79%** (the opener). Optimising to last-touch would
+  starve exactly the upper-funnel channel that starts journeys.
+- **Display earns ~5× more credit under the data-driven model** (13.6% vs 2.8%).
+  It rarely closes, but removing it from the graph collapses a lot of conversion
+  paths — so it is an *assist* engine, not the dead weight last-touch implies.
+  (Its economics still need fixing — that's a CAC problem, Day 2 — but the fix is
+  "make the assists cheaper," not "switch it off blind.")
+- **The data-driven model is the honest middle ground:** more generous to
+  openers than last-touch, less credulous about closers than first-touch, and —
+  unlike the rules-based models — grounded in how much each channel actually
+  moves conversion probability.
+- **Practical read:** judge closing channels (Paid Search) on last-touch and
+  you overpay; judge assist channels (Display, Paid Social) on last-touch and you
+  cut demand generation. The data-driven view is what should feed the Day 5
+  budget-reallocation model.
+
+The Markov model is a compact absorbing-chain implementation
+([`attribution.py`](attribution.py) → `markov()`): build the transition matrix
+`start → channels → (conv | null)`, then for each channel measure the drop in
+`P(conversion)` when it is removed, and normalise those removal effects into
+credit.
+
+---
+
 ## Roadmap
 
 | Day | Focus |
 |-----|-------|
 | **1** | **Data generation, SQL layer, channel performance** ✅ |
 | **2** | **Unit economics — CAC / ROAS / LTV:CAC by channel & market, efficiency frontier** ✅ |
-| 3 | Attribution — first / last / linear / time-decay / position-based / data-driven |
+| **3** | **Attribution — first / last / linear / time-decay / position-based / data-driven (Markov)** ✅ |
 | 4 | LTV, retention cohorts, payback period, LTV:CAC |
 | 5 | Growth opportunities, anomaly detection, budget reallocation |
 | 6 | CRO & experimentation — incrementality, geo-holdout lift, sample-size |
@@ -160,6 +213,7 @@ python channel_performance.py # writes images/ charts + channel_summary.csv
 generate_data.py        synthetic dataset generator (spend, users, touchpoints)
 channel_performance.py  Day 1 channel analysis + charts
 unit_economics.py       Day 2 CAC / ROAS / LTV:CAC by channel, market & matrix
+attribution.py          Day 3 six-model multi-touch attribution (incl. Markov)
 sql_analysis.py         loads the CSVs into SQLite and runs the named queries
 sql_views.py            builds the unit-economics SQL views and materialises them
 sql/queries.sql         channel-performance SQL
