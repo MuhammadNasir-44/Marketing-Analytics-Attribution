@@ -30,6 +30,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
@@ -228,19 +229,92 @@ def markov(journeys: pd.DataFrame, channels: list[str], total: float) -> pd.Seri
     return eff / eff.sum() * total
 
 
-if __name__ == "__main__":
-    journeys, channels = load_journeys()
+MODEL_ORDER = [
+    "first_touch", "last_touch", "linear",
+    "time_decay", "position_based", "data_driven",
+]
+
+
+def compare_models(journeys: pd.DataFrame, channels: list[str]) -> pd.DataFrame:
+    """Credited conversions per channel under every model (columns conserve)."""
     paths = _converting_paths(journeys)
     recency = _converting_paths_with_recency(journeys)
-    print(f"{len(paths):,} converting journeys, {len(channels)} channels\n")
-
-    comparison = pd.DataFrame({
+    total = len(paths)
+    return pd.DataFrame({
         "first_touch": first_touch(paths, channels),
         "last_touch": last_touch(paths, channels),
         "linear": linear(paths, channels),
         "time_decay": time_decay(recency, channels),
         "position_based": position_based(paths, channels),
-        "data_driven": markov(journeys, channels, total=len(paths)),
-    })
-    print(comparison.round(0).to_string())
-    print("\ncolumn totals:", comparison.sum().round(0).to_dict())
+        "data_driven": markov(journeys, channels, total=total),
+    })[MODEL_ORDER]
+
+
+def plot_model_comparison(comp: pd.DataFrame) -> Path:
+    """Grouped bars: credited conversions per channel across all six models."""
+    order = comp["data_driven"].sort_values(ascending=False).index
+    d = comp.loc[order]
+    x = np.arange(len(d))
+    width = 0.13
+
+    fig, ax = plt.subplots(figsize=(11, 6))
+    for i, model in enumerate(MODEL_ORDER):
+        ax.bar(x + (i - 2.5) * width, d[model], width,
+               label=model.replace("_", "-"), color=PALETTE[i], alpha=0.9)
+    ax.set_xticks(x, d.index)
+    ax.set_ylabel("Credited conversions")
+    ax.set_title("Attribution by model: credited conversions per channel",
+                 fontweight="bold", loc="left")
+    ax.legend(ncol=3, fontsize=9, frameon=False)
+    fig.tight_layout()
+    out = IMG_DIR / "attribution_model_comparison.png"
+    fig.savefig(out)
+    plt.close(fig)
+    return out
+
+
+def plot_lasttouch_bias(comp: pd.DataFrame) -> Path:
+    """How much last-touch over- or under-credits each channel vs data-driven."""
+    diff = ((comp["last_touch"] - comp["data_driven"])
+            / comp["data_driven"] * 100).sort_values()
+    fig, ax = plt.subplots(figsize=(9, 5))
+    colors = [PALETTE[4] if v < 0 else PALETTE[2] for v in diff]
+    ax.barh(diff.index, diff, color=colors, alpha=0.9)
+    ax.axvline(0, color="grey", lw=1)
+    ax.set_xlabel("Last-touch credit vs data-driven (%)")
+    ax.set_title("Last-touch bias: who the platform default over- and under-credits",
+                 fontweight="bold", loc="left")
+    for y, v in enumerate(diff):
+        ax.text(v + (2 if v >= 0 else -2), y, f"{v:+.0f}%",
+                va="center", ha="left" if v >= 0 else "right", fontsize=9)
+    ax.margins(x=0.15)
+    fig.tight_layout()
+    out = IMG_DIR / "attribution_lasttouch_bias.png"
+    fig.savefig(out)
+    plt.close(fig)
+    return out
+
+
+def main() -> None:
+    IMG_DIR.mkdir(exist_ok=True)
+    journeys, channels = load_journeys()
+    comp = compare_models(journeys, channels)
+
+    comp.to_csv(IMG_DIR / "attribution_by_model.csv")
+    shares = (comp / comp.sum() * 100).round(1)
+    shares.to_csv(IMG_DIR / "attribution_share_by_model.csv")
+
+    n_conv = int(comp["first_touch"].sum())
+    print(f"{n_conv:,} converting journeys, {len(channels)} channels\n")
+    print("Credited conversions by model\n")
+    print(comp.round(0).to_string())
+    print("\nShare of credit (%)\n")
+    print(shares.to_string())
+
+    p1 = plot_model_comparison(comp)
+    p2 = plot_lasttouch_bias(comp)
+    print(f"\nSaved charts: {p1.name}, {p2.name}")
+
+
+if __name__ == "__main__":
+    main()
