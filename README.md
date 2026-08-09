@@ -177,6 +177,58 @@ credit.
 
 ---
 
+## Day 4 — LTV, retention & payback (Objective 2)
+
+*What is a customer worth, how long do they stay, and when do we get our money back?*
+
+`ltv_retention.py` builds the value side of the unit economics: monthly retention
+cohorts, retention curves by channel, LTV by channel/market/segment, and a payback
++ LTV:CAC scorecard. The cohort and payback logic is mirrored in SQL
+([`sql/cohort_queries.sql`](sql/cohort_queries.sql), run via `sql_cohorts.py`),
+and the two agree to the cent.
+
+![Retention cohorts](images/retention_cohorts.png)
+
+Retention is shown as a **triangular** cohort grid on purpose: a cohort is only
+measured out to its age at the close of the data window, so unobserved cells are
+left blank rather than dishonestly counted as churn. Curves are computed with an
+**at-risk denominator** (only customers old enough to be seen at each tenure).
+
+![Retention by channel](images/retention_curves_by_channel.png)
+![Payback and LTV:CAC](images/payback_and_ltv_cac.png)
+
+**Payback & LTV:CAC scorecard by channel** (see [`images/payback_ltv_cac_by_channel.csv`](images/payback_ltv_cac_by_channel.csv)):
+
+| Channel | CAC | Monthly ARPU | Avg LTV | Payback (months) | LTV:CAC |
+|---|--:|--:|--:|--:|--:|
+| SEO | $13 | $34 | $452 | **0.4** | 35.9 |
+| Email | $24 | $34 | $391 | **0.7** | 16.4 |
+| Referral | $85 | $30 | $307 | 2.8 | 3.6 |
+| Paid Search | $121 | $32 | $272 | 3.7 | 2.2 |
+| Paid Social | $158 | $25 | $142 | 6.3 | 0.9 |
+| Display | $496 | $20 | $98 | **24.3** | 0.2 |
+
+**What stands out**
+
+- **Retention quality tracks channel quality.** By month 11, SEO retains ~46% of
+  a cohort and Email ~38%, while Paid Social (~16%) and Display (~10%) have
+  bled out most of theirs — so the cheap-to-acquire channels are *also* the
+  sticky, high-LTV ones. That compounding is why SEO's LTV ($452) is ~4.6× Display's ($98).
+- **Payback reframes the paid channels.** Paid Search recovers its CAC in under
+  4 months and Referral in under 3 — well inside a 12-month target — so they are
+  cash-efficient to scale even though their first-order ROAS looked thin on Day 2.
+- **Display is structurally broken, not just expensive.** A 24-month payback
+  against a ~9-month average lifetime means the average Display customer *churns
+  before ever repaying their acquisition cost* (LTV:CAC 0.2). This is a stop, not
+  a discount.
+- **Value is concentrated.** The top LTV tercile is ~31% of customers but ~41% of
+  revenue — the natural target for a retention / win-back programme (Day 6 CRO).
+- **Markets echo the same split:** US/UK customers are worth ~$320–360 in LTV vs
+  ~$120–145 in BR/IN, consistent with the Day 2 CAC gap — the emerging markets
+  cost more *and* return less.
+
+---
+
 ## Roadmap
 
 | Day | Focus |
@@ -184,7 +236,7 @@ credit.
 | **1** | **Data generation, SQL layer, channel performance** ✅ |
 | **2** | **Unit economics — CAC / ROAS / LTV:CAC by channel & market, efficiency frontier** ✅ |
 | **3** | **Attribution — first / last / linear / time-decay / position-based / data-driven (Markov)** ✅ |
-| 4 | LTV, retention cohorts, payback period, LTV:CAC |
+| **4** | **LTV, retention cohorts, payback period, LTV:CAC** ✅ |
 | 5 | Growth opportunities, anomaly detection, budget reallocation |
 | 6 | CRO & experimentation — incrementality, geo-holdout lift, sample-size |
 | 7 | Streamlit executive dashboard + written report |
@@ -214,6 +266,8 @@ generate_data.py        synthetic dataset generator (spend, users, touchpoints)
 channel_performance.py  Day 1 channel analysis + charts
 unit_economics.py       Day 2 CAC / ROAS / LTV:CAC by channel, market & matrix
 attribution.py          Day 3 six-model multi-touch attribution (incl. Markov)
+ltv_retention.py        Day 4 retention cohorts, LTV, payback & LTV:CAC
+sql_cohorts.py          runs the cohort / LTV / payback SQL queries
 sql_analysis.py         loads the CSVs into SQLite and runs the named queries
 sql_views.py            builds the unit-economics SQL views and materialises them
 sql/queries.sql         channel-performance SQL
