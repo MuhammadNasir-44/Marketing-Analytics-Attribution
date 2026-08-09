@@ -110,6 +110,45 @@ def plot_retention_heatmap(mat: pd.DataFrame) -> Path:
     return out
 
 
+def retention_curves_by_channel(customers: pd.DataFrame, max_t: int = 11) -> pd.DataFrame:
+    """Survival curve per channel with a proper at-risk denominator.
+
+    For each tenure ``t`` a customer only counts if their cohort is old enough to
+    have been observed at ``t`` (``cohort_age >= t``); retention is then the
+    share of those at-risk customers still active. This avoids the censoring bias
+    that a naive average over all customers would introduce.
+    """
+    c = customers.copy()
+    c["age"] = c["cohort"].map(_cohort_age)
+    curves: dict[str, list[float]] = {}
+    for channel, grp in c.groupby("channel"):
+        row = []
+        for t in range(max_t + 1):
+            at_risk = grp[grp["age"] >= t]
+            row.append((at_risk["months_active"] > t).mean() * 100 if len(at_risk) else np.nan)
+        curves[channel] = row
+    return pd.DataFrame(curves, index=range(max_t + 1)).T
+
+
+def plot_retention_curves(curves: pd.DataFrame) -> Path:
+    """Retention curves per channel, ordered by 6-month retention."""
+    order = curves[6].sort_values(ascending=False).index
+    fig, ax = plt.subplots(figsize=(9, 5.5))
+    for i, channel in enumerate(order):
+        ax.plot(curves.columns, curves.loc[channel], marker="o", lw=2,
+                color=PALETTE[i % len(PALETTE)], label=channel)
+    ax.set_xlabel("Tenure (months since signup)")
+    ax.set_ylabel("Retention (%)")
+    ax.set_ylim(0, 100)
+    ax.set_title("Retention curve by acquisition channel", fontweight="bold", loc="left")
+    ax.legend(frameon=False, fontsize=9)
+    fig.tight_layout()
+    out = IMG_DIR / "retention_curves_by_channel.png"
+    fig.savefig(out)
+    plt.close(fig)
+    return out
+
+
 def main() -> None:
     IMG_DIR.mkdir(exist_ok=True)
     customers = load_customers()
@@ -119,8 +158,14 @@ def main() -> None:
     print("Retention by cohort (%)\n")
     print(mat.round(0).to_string())
 
+    curves = retention_curves_by_channel(customers)
+    curves.to_csv(IMG_DIR / "retention_curves_by_channel.csv")
+    print("\nRetention by channel and tenure (%)\n")
+    print(curves.round(0).to_string())
+
     p1 = plot_retention_heatmap(mat)
-    print(f"\nSaved chart: {p1.name}")
+    p2 = plot_retention_curves(curves)
+    print(f"\nSaved charts: {p1.name}, {p2.name}")
 
 
 if __name__ == "__main__":
