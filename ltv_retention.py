@@ -212,6 +212,64 @@ def plot_ltv_and_segments(
     return out
 
 
+def payback_scorecard(customers: pd.DataFrame) -> pd.DataFrame:
+    """CAC, monthly ARPU, payback period and LTV:CAC per channel.
+
+    Payback is CAC divided by the average revenue a customer generates per active
+    month -- i.e. how many months of a customer's life it takes to recoup what we
+    paid to acquire them. It is the cash-flow complement to LTV:CAC: a channel can
+    have a healthy lifetime ratio yet still tie up cash for a long time.
+    """
+    spend = pd.read_csv(DATA_DIR / "spend.csv")
+    cac = spend.groupby("channel")["spend"].sum() / customers.groupby("channel")["user_id"].count()
+
+    grp = customers.groupby("channel")
+    monthly_arpu = grp["commission_revenue"].sum() / grp["months_active"].sum()
+    avg_ltv = grp["ltv"].mean()
+
+    df = pd.DataFrame({
+        "cac": cac,
+        "monthly_arpu": monthly_arpu,
+        "avg_ltv": avg_ltv,
+    })
+    df["payback_months"] = df["cac"] / df["monthly_arpu"]
+    df["ltv_cac"] = df["avg_ltv"] / df["cac"]
+    return df.sort_values("payback_months")
+
+
+def plot_payback_scorecard(sc: pd.DataFrame, healthy_ltv_cac: float = 3.0) -> Path:
+    """Payback period and LTV:CAC per channel, with health thresholds."""
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5.5))
+
+    d = sc.sort_values("payback_months")
+    colors = [PALETTE[2] if m <= 12 else PALETTE[4] for m in d["payback_months"]]
+    ax1.barh(d.index, d["payback_months"], color=colors, alpha=0.9)
+    ax1.axvline(12, color="grey", ls="--", lw=1)
+    ax1.text(12, -0.7, "12-month target", color="grey", fontsize=9, ha="center")
+    ax1.set_xlabel("Payback period (months)")
+    ax1.set_title("CAC payback by channel", fontweight="bold", loc="left")
+    for y, v in enumerate(d["payback_months"]):
+        label = f"{v:,.1f}" if np.isfinite(v) else "n/a"
+        ax1.text(v + 0.3, y, label, va="center", fontsize=9)
+
+    d2 = sc.sort_values("ltv_cac")
+    colors2 = [PALETTE[2] if r >= healthy_ltv_cac else
+               (PALETTE[3] if r >= 1 else PALETTE[4]) for r in d2["ltv_cac"]]
+    ax2.barh(d2.index, d2["ltv_cac"], color=colors2, alpha=0.9)
+    ax2.axvline(healthy_ltv_cac, color="grey", ls="--", lw=1)
+    ax2.text(healthy_ltv_cac, -0.7, "3:1 healthy", color="grey", fontsize=9, ha="center")
+    ax2.set_xlabel("LTV : CAC")
+    ax2.set_title("LTV:CAC by channel", fontweight="bold", loc="left")
+    for y, v in enumerate(d2["ltv_cac"]):
+        ax2.text(v + 0.3, y, f"{v:.1f}", va="center", fontsize=9)
+
+    fig.tight_layout()
+    out = IMG_DIR / "payback_and_ltv_cac.png"
+    fig.savefig(out)
+    plt.close(fig)
+    return out
+
+
 def main() -> None:
     IMG_DIR.mkdir(exist_ok=True)
     customers = load_customers()
@@ -240,10 +298,16 @@ def main() -> None:
     print("\nValue segments (LTV terciles)\n")
     print(seg.round(2).to_string())
 
+    scorecard = payback_scorecard(customers)
+    scorecard.to_csv(IMG_DIR / "payback_ltv_cac_by_channel.csv")
+    print("\nPayback & LTV:CAC scorecard by channel\n")
+    print(scorecard.round(2).to_string())
+
     p1 = plot_retention_heatmap(mat)
     p2 = plot_retention_curves(curves)
     p3 = plot_ltv_and_segments(ltv_channel, seg)
-    print(f"\nSaved charts: {p1.name}, {p2.name}, {p3.name}")
+    p4 = plot_payback_scorecard(scorecard)
+    print(f"\nSaved charts: {p1.name}, {p2.name}, {p3.name}, {p4.name}")
 
 
 if __name__ == "__main__":
