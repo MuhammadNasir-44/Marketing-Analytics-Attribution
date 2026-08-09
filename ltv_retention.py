@@ -149,6 +149,69 @@ def plot_retention_curves(curves: pd.DataFrame) -> Path:
     return out
 
 
+def ltv_by(customers: pd.DataFrame, key: str) -> pd.DataFrame:
+    """Average predicted LTV and observed revenue per customer, grouped by key."""
+    g = customers.groupby(key).agg(
+        customers=("user_id", "count"),
+        avg_ltv=("ltv", "mean"),
+        avg_observed_rev=("commission_revenue", "mean"),
+        avg_tenure=("months_active", "mean"),
+    )
+    return g.sort_values("avg_ltv", ascending=False)
+
+
+def value_segments(customers: pd.DataFrame) -> pd.DataFrame:
+    """Split customers into High/Mid/Low LTV terciles and show revenue concentration.
+
+    Surfaces the commercial reality that value is concentrated -- a small share of
+    customers drives a large share of revenue, which is what a retention/CRM
+    programme should be pointed at.
+    """
+    c = customers.copy()
+    c["segment"] = pd.qcut(c["ltv"], 3, labels=["Low", "Mid", "High"])
+    seg = c.groupby("segment", observed=True).agg(
+        customers=("user_id", "count"),
+        avg_ltv=("ltv", "mean"),
+        total_revenue=("commission_revenue", "sum"),
+    )
+    seg["customer_share_pct"] = seg["customers"] / seg["customers"].sum() * 100
+    seg["revenue_share_pct"] = seg["total_revenue"] / seg["total_revenue"].sum() * 100
+    return seg.loc[["High", "Mid", "Low"]]
+
+
+def plot_ltv_and_segments(
+    ltv_channel: pd.DataFrame, seg: pd.DataFrame,
+) -> Path:
+    """Avg LTV by channel alongside the value-segment revenue concentration."""
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5.5))
+
+    d = ltv_channel.sort_values("avg_ltv")
+    ax1.barh(d.index, d["avg_ltv"], color=PALETTE[0], alpha=0.9)
+    ax1.set_xlabel("Average lifetime value ($)")
+    ax1.set_title("LTV by acquisition channel", fontweight="bold", loc="left")
+    for y, v in enumerate(d["avg_ltv"]):
+        ax1.text(v + 4, y, f"${v:,.0f}", va="center", fontsize=9)
+
+    x = np.arange(len(seg))
+    ax2.bar(x - 0.2, seg["customer_share_pct"], 0.4, label="% of customers",
+            color=PALETTE[1], alpha=0.9)
+    ax2.bar(x + 0.2, seg["revenue_share_pct"], 0.4, label="% of revenue",
+            color=PALETTE[2], alpha=0.9)
+    ax2.set_xticks(x, [f"{s}\n(${v:,.0f} LTV)" for s, v in zip(seg.index, seg["avg_ltv"])])
+    ax2.set_ylabel("Share (%)")
+    ax2.set_title("Value concentration by LTV segment", fontweight="bold", loc="left")
+    ax2.legend(frameon=False, fontsize=9)
+    for i, (cs, rs) in enumerate(zip(seg["customer_share_pct"], seg["revenue_share_pct"])):
+        ax2.text(i - 0.2, cs + 1, f"{cs:.0f}%", ha="center", fontsize=8)
+        ax2.text(i + 0.2, rs + 1, f"{rs:.0f}%", ha="center", fontsize=8)
+
+    fig.tight_layout()
+    out = IMG_DIR / "ltv_and_value_segments.png"
+    fig.savefig(out)
+    plt.close(fig)
+    return out
+
+
 def main() -> None:
     IMG_DIR.mkdir(exist_ok=True)
     customers = load_customers()
@@ -163,9 +226,24 @@ def main() -> None:
     print("\nRetention by channel and tenure (%)\n")
     print(curves.round(0).to_string())
 
+    ltv_channel = ltv_by(customers, "channel")
+    ltv_country = ltv_by(customers, "country")
+    ltv_channel.to_csv(IMG_DIR / "ltv_by_channel.csv")
+    ltv_country.to_csv(IMG_DIR / "ltv_by_country.csv")
+    seg = value_segments(customers)
+    seg.to_csv(IMG_DIR / "ltv_value_segments.csv")
+
+    print("\nLTV by channel\n")
+    print(ltv_channel.round(2).to_string())
+    print("\nLTV by market\n")
+    print(ltv_country.round(2).to_string())
+    print("\nValue segments (LTV terciles)\n")
+    print(seg.round(2).to_string())
+
     p1 = plot_retention_heatmap(mat)
     p2 = plot_retention_curves(curves)
-    print(f"\nSaved charts: {p1.name}, {p2.name}")
+    p3 = plot_ltv_and_segments(ltv_channel, seg)
+    print(f"\nSaved charts: {p1.name}, {p2.name}, {p3.name}")
 
 
 if __name__ == "__main__":
