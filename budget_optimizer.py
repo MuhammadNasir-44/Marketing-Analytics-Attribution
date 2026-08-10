@@ -145,6 +145,58 @@ def recommend(scan: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     return rec, summary
 
 
+ACTION_COLOR = {"Scale": PALETTE[2], "Maintain": PALETTE[3], "Pause/Fix": PALETTE[4]}
+
+
+def plot_recommendation(rec: pd.DataFrame, summary: dict) -> Path:
+    """Current vs recommended spend per channel, plus the projected-impact KPIs."""
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 6),
+                                   gridspec_kw={"width_ratios": [2.1, 1]})
+
+    d = rec.sort_values("recommended_spend", ascending=True)
+    y = range(len(d))
+    ax1.barh([i + 0.2 for i in y], d["current_spend"] / 1000, height=0.38,
+             color="#c9ced6", label="Current")
+    ax1.barh([i - 0.2 for i in y], d["recommended_spend"] / 1000, height=0.38,
+             color=[ACTION_COLOR[a] for a in d["action"]], label="Recommended")
+    ax1.set_yticks(list(y), d.index)
+    ax1.set_xlabel("Spend ($000s)")
+    ax1.set_title("Current vs recommended budget by channel", fontweight="bold", loc="left")
+    ax1.legend(frameon=False, fontsize=9, loc="lower right")
+    for i, (cur, act) in enumerate(zip(d["recommended_spend"], d["action"])):
+        ax1.text(cur / 1000 + 20, i - 0.2, act, va="center", fontsize=8,
+                 color=ACTION_COLOR[act])
+
+    # KPI panel.
+    ax2.axis("off")
+    dc = summary["customers_after"] - summary["customers_before"]
+    # Escape '$' so matplotlib doesn't treat it as mathtext.
+    d = r"\$"
+    lines = [
+        ("Customers", f"{summary['customers_before']:,}",
+         f"{summary['customers_after']:,}", f"+{dc:,}  (+{dc / summary['customers_before'] * 100:.0f}%)"),
+        ("Blended CAC", f"{d}{summary['cac_before']:.0f}",
+         f"{d}{summary['cac_after']:.0f}", f"-{d}{summary['cac_before'] - summary['cac_after']:.0f}"),
+        ("Total spend", f"{d}{summary['spend_before'] / 1e6:.2f}m",
+         f"{d}{summary['spend_after'] / 1e6:.2f}m", f"{d}{summary['held_savings'] / 1000:.0f}k held"),
+    ]
+    ax2.set_title("Projected impact", fontweight="bold", loc="left")
+    ypos = 0.82
+    for label, before, after, delta in lines:
+        ax2.text(0.0, ypos, label, fontsize=11, fontweight="bold", transform=ax2.transAxes)
+        ax2.text(0.0, ypos - 0.06, f"{before}  ->  {after}", fontsize=11,
+                 transform=ax2.transAxes)
+        ax2.text(0.0, ypos - 0.12, delta, fontsize=11, color=PALETTE[2],
+                 transform=ax2.transAxes)
+        ypos -= 0.26
+
+    fig.tight_layout()
+    out = IMG_DIR / "budget_reallocation.png"
+    fig.savefig(out)
+    plt.close(fig)
+    return out
+
+
 def main() -> None:
     IMG_DIR.mkdir(exist_ok=True)
     metrics = base_metrics()
@@ -172,6 +224,9 @@ def main() -> None:
     print(f"  customers: {summary['customers_before']:,} -> {summary['customers_after']:,} "
           f"(+{summary['customers_after'] - summary['customers_before']:,})")
     print(f"  blended CAC: ${summary['cac_before']:.0f} -> ${summary['cac_after']:.0f}")
+
+    p = plot_recommendation(rec, summary)
+    print(f"\nSaved chart: {p.name}")
 
 
 if __name__ == "__main__":
