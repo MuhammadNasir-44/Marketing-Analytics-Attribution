@@ -229,6 +229,64 @@ left blank rather than dishonestly counted as churn. Curves are computed with an
 
 ---
 
+## Day 5 — Growth opportunities & anomaly detection (Objective 3)
+
+*Where is budget leaking, and where should the next dollar go?*
+
+This is where the analysis becomes a decision. Two modules:
+
+**1. Anomaly detection** (`anomaly_detection.py`) scans every channel × market
+daily-spend series with a **rolling z-score**. It is unsupervised — not told
+where to look — and independently rediscovers the planted problem:
+
+![Spend anomaly](images/spend_anomaly.png)
+
+> **Paid Social × Brazil, 2 – 23 Feb:** spend ran ~3× its trailing baseline for
+> 22 days (peak z ≈ 27) while new customers stayed flat — **$23.3k of $31.3k
+> wasted**, a ~$212 CAC on a channel that normally acquires far cheaper. Because
+> a sustained overspend inflates its own trailing baseline, the detector flags
+> the *onset*, then freezes the pre-onset baseline and extends the event while
+> spend stays elevated — recovering the full window and the full waste.
+
+**2. Budget reallocation** (`budget_optimizer.py`) classifies each channel by
+LTV:CAC and scale, then runs a **budget-neutral** recommender: trim the
+loss-making channels, redeploy into the efficient ones (capped at +50% each,
+with diminishing returns on the extra spend), and hold whatever the caps can't
+absorb.
+
+![Budget reallocation](images/budget_reallocation.png)
+
+**Scale / Pause / Fix recommendation** (see [`images/budget_recommendation.csv`](images/budget_recommendation.csv)):
+
+| Channel | Action | Current | Recommended | Δ Spend | Δ Customers |
+|---|---|--:|--:|--:|--:|
+| Paid Search | Maintain | $1.48m | $2.22m | +$742k | +4,889 |
+| Referral | Scale | $264k | $396k | +$132k | +1,248 |
+| Email | Scale | $149k | $223k | +$74k | +2,501 |
+| SEO | Scale | $66k | $100k | +$33k | +2,112 |
+| Display | Pause/Fix | $497k | $199k | −$298k | −602 |
+| Paid Social | Pause/Fix | $1.26m | $503k | −$755k | −4,775 |
+
+**Projected impact — at the same total budget:**
+
+- **Customers: 35,836 → 41,209 (+5,373, +15%)**
+- **Blended CAC: $104 → $88**
+- **$71k held as savings** (plus the $23k of recovered anomaly waste)
+
+**What stands out**
+
+- **The under-scaled winners are obvious once framed correctly.** SEO, Email and
+  Referral clear a 3.6–36× LTV:CAC yet each takes under 8% of budget — the model
+  grows them to their realistic ceiling.
+- **The plan is dominated by two moves:** halve the money in the sub-1.0 LTV:CAC
+  channels (Paid Social, Display) and let the efficient channels — plus the
+  proven Paid Search workhorse — absorb it. Same spend, ~15% more customers.
+- **Realistic, not a paper optimum.** Caps (+50%/channel) and a diminishing-
+  returns penalty on marginal spend keep the recommendation something a team
+  could actually execute in-quarter, rather than "put 100% into SEO."
+
+---
+
 ## Roadmap
 
 | Day | Focus |
@@ -237,7 +295,7 @@ left blank rather than dishonestly counted as churn. Curves are computed with an
 | **2** | **Unit economics — CAC / ROAS / LTV:CAC by channel & market, efficiency frontier** ✅ |
 | **3** | **Attribution — first / last / linear / time-decay / position-based / data-driven (Markov)** ✅ |
 | **4** | **LTV, retention cohorts, payback period, LTV:CAC** ✅ |
-| 5 | Growth opportunities, anomaly detection, budget reallocation |
+| **5** | **Growth opportunities, anomaly detection, budget reallocation** ✅ |
 | 6 | CRO & experimentation — incrementality, geo-holdout lift, sample-size |
 | 7 | Streamlit executive dashboard + written report |
 
@@ -267,6 +325,8 @@ channel_performance.py  Day 1 channel analysis + charts
 unit_economics.py       Day 2 CAC / ROAS / LTV:CAC by channel, market & matrix
 attribution.py          Day 3 six-model multi-touch attribution (incl. Markov)
 ltv_retention.py        Day 4 retention cohorts, LTV, payback & LTV:CAC
+anomaly_detection.py    Day 5 rolling z-score spend-anomaly detection
+budget_optimizer.py     Day 5 opportunity scan & budget reallocation
 sql_cohorts.py          runs the cohort / LTV / payback SQL queries
 sql_analysis.py         loads the CSVs into SQLite and runs the named queries
 sql_views.py            builds the unit-economics SQL views and materialises them
