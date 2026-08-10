@@ -143,6 +143,45 @@ def anomaly_events(flagged: pd.DataFrame,
     return material.sort_values("excess_spend", ascending=False).reset_index(drop=True)
 
 
+def plot_anomaly(flagged: pd.DataFrame, event: pd.Series) -> Path:
+    """Spend vs baseline with the event window shaded, plus new customers below.
+
+    Two panels make the point that spend without a matching lift in customers is
+    waste: the top panel shows the spend breakout, the bottom shows conversions
+    staying flat right through it.
+    """
+    s = flagged[(flagged["channel"] == event["channel"])
+                & (flagged["country"] == event["country"])].sort_values("date")
+    start, end = pd.Timestamp(event["start"]), pd.Timestamp(event["end"])
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 7), sharex=True,
+                                   gridspec_kw={"height_ratios": [2, 1]})
+
+    ax1.plot(s["date"], s["spend"], color=PALETTE[0], lw=1.3, label="Daily spend")
+    ax1.plot(s["date"], s["expected"], color="grey", ls="--", lw=1.2,
+             label="Trailing baseline")
+    ax1.axvspan(start, end, color=PALETTE[4], alpha=0.15)
+    ax1.set_ylabel("Spend ($/day)")
+    ax1.set_title(
+        f"Spend anomaly: {event['channel']} x {event['country']}  "
+        f"— ${event['excess_spend']:,.0f} wasted over {event['days']} days",
+        fontweight="bold", loc="left")
+    ax1.legend(frameon=False, fontsize=9)
+
+    ax2.bar(s["date"], s["customers"], color=PALETTE[2], alpha=0.7, width=1.0)
+    ax2.axvspan(start, end, color=PALETTE[4], alpha=0.15)
+    ax2.set_ylabel("New customers/day")
+    ax2.set_xlabel("")
+    ax2.annotate("spend ~3x, customers flat", xy=(start, ax2.get_ylim()[1] * 0.8),
+                 xytext=(6, 0), textcoords="offset points", color=PALETTE[4], fontsize=9)
+
+    fig.tight_layout()
+    out = IMG_DIR / "spend_anomaly.png"
+    fig.savefig(out)
+    plt.close(fig)
+    return out
+
+
 def main() -> None:
     IMG_DIR.mkdir(exist_ok=True)
     df = daily_series()
@@ -154,6 +193,14 @@ def main() -> None:
           f"series ({len(df):,} channel-days)\n")
     print(f"Flagged {len(events)} anomaly event(s):\n")
     print(events.to_string(index=False))
+
+    if not events.empty:
+        top = events.iloc[0]
+        p = plot_anomaly(flagged, top)
+        cac = top["spend"] / max(top["customers"], 1)
+        print(f"\nTop event CAC during window: ${cac:,.0f} "
+              f"(${top['excess_spend']:,.0f} of ${top['spend']:,.0f} wasted)")
+        print(f"Saved chart: {p.name}")
 
 
 if __name__ == "__main__":
