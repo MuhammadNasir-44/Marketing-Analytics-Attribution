@@ -100,6 +100,52 @@ def plot_ab_test(ab: dict) -> Path:
     return out
 
 
+def measurement_plan(baseline: float = CONTROL_CVR,
+                     daily_visitors_per_arm: int = 550) -> pd.DataFrame:
+    """Pre-launch plan: sample size & run-time to detect a range of lifts.
+
+    For each relative lift a team might target, compute the per-arm sample size
+    needed for 80% power at alpha 0.05, and translate it into test days at the
+    given traffic. This is the table you agree *before* launching, so nobody
+    calls a winner on an underpowered test.
+    """
+    rows = []
+    for rel in [0.05, 0.075, 0.10, 0.15, 0.20]:
+        p2 = baseline * (1 + rel)
+        n = sample_size_two_proportions(baseline, p2)
+        rows.append({
+            "target_rel_lift": f"{rel * 100:.1f}%",
+            "treatment_cvr": round(p2, 4),
+            "n_per_arm": n,
+            "total_n": n * 2,
+            "test_days": int(np.ceil(n / daily_visitors_per_arm)),
+        })
+    return pd.DataFrame(rows)
+
+
+def plot_power_curve(baseline: float = CONTROL_CVR) -> Path:
+    """Power vs per-arm sample size for a few target lifts."""
+    ns = np.arange(500, 30001, 500)
+    fig, ax = plt.subplots(figsize=(9, 5.5))
+    for i, rel in enumerate([0.05, 0.10, 0.15, 0.20]):
+        p2 = baseline * (1 + rel)
+        power = [power_two_proportions(baseline, p2, int(n)) for n in ns]
+        ax.plot(ns, power, lw=2, color=PALETTE[i], label=f"+{rel * 100:.0f}% lift")
+    ax.axhline(0.80, color="grey", ls="--", lw=1)
+    ax.text(ns[-1], 0.81, "80% power target", color="grey", ha="right", fontsize=9)
+    ax.set_xlabel("Sample size per arm")
+    ax.set_ylabel("Statistical power")
+    ax.set_ylim(0, 1.02)
+    ax.set_title(f"Power curve (baseline CVR {baseline * 100:.0f}%, alpha 0.05)",
+                 fontweight="bold", loc="left")
+    ax.legend(frameon=False, fontsize=9)
+    fig.tight_layout()
+    out = IMG_DIR / "power_curve.png"
+    fig.savefig(out)
+    plt.close(fig)
+    return out
+
+
 def main() -> None:
     IMG_DIR.mkdir(exist_ok=True)
     rng = np.random.default_rng(SEED)
@@ -114,8 +160,14 @@ def main() -> None:
     print(f"  z = {r.z:.2f},  p = {r.p_value:.4f}  ->  "
           f"{'SIGNIFICANT' if r.significant else 'not significant'}")
 
+    plan = measurement_plan()
+    plan.to_csv(IMG_DIR / "measurement_plan.csv", index=False)
+    print("\nPre-launch measurement plan (80% power, alpha 0.05)\n")
+    print(plan.to_string(index=False))
+
     p1 = plot_ab_test(ab)
-    print(f"\nSaved chart: {p1.name}")
+    p2 = plot_power_curve()
+    print(f"\nSaved charts: {p1.name}, {p2.name}")
 
 
 if __name__ == "__main__":
