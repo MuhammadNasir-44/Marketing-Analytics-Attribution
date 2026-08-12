@@ -146,6 +146,77 @@ def plot_power_curve(baseline: float = CONTROL_CVR) -> Path:
     return out
 
 
+# Geo-holdout experiment settings.
+N_GEOS = 50
+GEO_BASELINE_MEAN = 1000       # organic conversions per geo over the window
+GEO_BASELINE_SD = 90
+TRUE_INCREMENTALITY = 0.12     # ads truly lift conversions by 12% in test geos
+AD_SPEND_PER_TEST_GEO = 15000
+
+
+def simulate_geo_holdout(rng: np.random.Generator) -> dict:
+    """Cluster-randomised geo test: half the geos get ads, half are held out.
+
+    Every geo has a noisy organic baseline; test geos additionally receive an ad-
+    driven lift. The permutation test then recovers the incremental effect, and
+    we contrast the *incremental* CAC with the naive CAC that would credit ads
+    with every conversion in the test geos.
+    """
+    baseline = rng.normal(GEO_BASELINE_MEAN, GEO_BASELINE_SD, N_GEOS).clip(min=100)
+    assign = np.zeros(N_GEOS, dtype=bool)
+    assign[rng.choice(N_GEOS, N_GEOS // 2, replace=False)] = True   # test geos
+
+    conversions = baseline.copy()
+    conversions[assign] *= (1 + TRUE_INCREMENTALITY)
+    conversions = np.round(conversions * rng.normal(1.0, 0.03, N_GEOS)).clip(min=0)
+
+    test = conversions[assign]
+    holdout = conversions[~assign]
+    lift = geo_lift_permutation(test, holdout, seed=SEED)
+
+    n_test = assign.sum()
+    incremental_conversions = lift.abs_lift * n_test
+    total_test_conversions = test.sum()
+    ad_spend = AD_SPEND_PER_TEST_GEO * n_test
+    return {
+        "test": test, "holdout": holdout, "lift": lift,
+        "incremental_conversions": incremental_conversions,
+        "incrementality_ratio": incremental_conversions / total_test_conversions,
+        "incremental_cac": ad_spend / incremental_conversions,
+        "naive_cac": ad_spend / total_test_conversions,
+    }
+
+
+def plot_geo_holdout(geo: dict) -> Path:
+    """Per-geo conversions (test vs holdout) with means and the lift verdict."""
+    lift = geo["lift"]
+    rng = np.random.default_rng(1)
+    fig, ax = plt.subplots(figsize=(9, 5.5))
+
+    for i, (label, vals, color) in enumerate([
+        ("Holdout (ads off)", geo["holdout"], PALETTE[1]),
+        ("Test (ads on)", geo["test"], PALETTE[2]),
+    ]):
+        x = i + rng.normal(0, 0.05, len(vals))
+        ax.scatter(x, vals, color=color, alpha=0.6, s=40)
+        ax.hlines(vals.mean(), i - 0.25, i + 0.25, color=color, lw=3)
+
+    ax.set_xticks([0, 1], ["Holdout (ads off)", "Test (ads on)"])
+    ax.set_ylabel("Conversions per geo")
+    ax.set_title("Geo-holdout incrementality test", fontweight="bold", loc="left")
+    verdict = "significant" if lift.p_value < 0.05 else "not significant"
+    ax.text(0.5, 0.95,
+            f"incremental lift +{lift.rel_lift * 100:.1f}%   "
+            f"permutation p = {lift.p_value:.3f}  ->  {verdict}",
+            transform=ax.transAxes, ha="center", fontsize=10,
+            color=PALETTE[2] if lift.p_value < 0.05 else PALETTE[4])
+    fig.tight_layout()
+    out = IMG_DIR / "geo_holdout_incrementality.png"
+    fig.savefig(out)
+    plt.close(fig)
+    return out
+
+
 def main() -> None:
     IMG_DIR.mkdir(exist_ok=True)
     rng = np.random.default_rng(SEED)
@@ -165,9 +236,23 @@ def main() -> None:
     print("\nPre-launch measurement plan (80% power, alpha 0.05)\n")
     print(plan.to_string(index=False))
 
+    geo = simulate_geo_holdout(rng)
+    lift = geo["lift"]
+    print("\nGeo-holdout incrementality\n")
+    print(f"  Holdout mean: {lift.mean_holdout:,.0f} conversions/geo")
+    print(f"  Test mean:    {lift.mean_test:,.0f} conversions/geo")
+    print(f"  Incremental lift: +{lift.rel_lift * 100:.1f}%  "
+          f"(permutation p = {lift.p_value:.3f})")
+    print(f"  Incremental conversions: {geo['incremental_conversions']:,.0f}")
+    print(f"  Only {geo['incrementality_ratio'] * 100:.1f}% of test-geo conversions "
+          f"were truly caused by ads")
+    print(f"  Incremental CAC ${geo['incremental_cac']:,.0f}  vs  "
+          f"naive CAC ${geo['naive_cac']:,.0f}")
+
     p1 = plot_ab_test(ab)
     p2 = plot_power_curve()
-    print(f"\nSaved charts: {p1.name}, {p2.name}")
+    p3 = plot_geo_holdout(geo)
+    print(f"\nSaved charts: {p1.name}, {p2.name}, {p3.name}")
 
 
 if __name__ == "__main__":
