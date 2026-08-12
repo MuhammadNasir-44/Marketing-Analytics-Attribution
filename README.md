@@ -287,6 +287,64 @@ absorb.
 
 ---
 
+## Day 6 — CRO & experimentation (Objective 4)
+
+*Did the change actually work — and would we have detected it if it did?*
+
+The measurement discipline behind the growth decisions. All statistics live in
+[`experiment_stats.py`](experiment_stats.py) (built on the standard library, no
+scipy) and are covered by a **pytest suite** ([`tests/`](tests), 11 tests).
+
+**1. Landing-page A/B test** — a two-proportion z-test with lift and a 95% CI.
+
+![A/B test](images/ab_test_conversion.png)
+
+> Treatment beat control **13.91% vs 11.71% — +2.21pp (+18.9%)**, 95% CI
+> (+1.18pp, +3.23pp), p < 0.001. The CI excludes zero, so this is a real win, not noise.
+
+**2. Pre-launch measurement plan** — the sample size and run-time to detect a
+target lift at 80% power *before* launching, so nobody calls an underpowered test.
+
+![Power curve](images/power_curve.png)
+
+| Target lift | Treatment CVR | n per arm | Test days |
+|---|--:|--:|--:|
+| +5% | 12.6% | 47,036 | 86 |
+| +10% | 13.2% | 12,004 | 22 |
+| +15% | 13.8% | 5,443 | 10 |
+| +20% | 14.4% | 3,122 | 6 |
+
+Smaller effects cost disproportionately more traffic — halving the detectable
+effect roughly quadruples the sample. The +18.9% win above needed only ~10 days.
+
+**3. Geo-holdout incrementality** — a cluster-randomised test (half the geos hold
+ads out) analysed with a distribution-free **permutation test**. This measures
+what ads *cause*, not what last-touch merely *correlates* with.
+
+![Geo-holdout](images/geo_holdout_incrementality.png)
+
+> Test geos ran **+16.8%** above holdout (permutation p < 0.001) — ~4,044
+> incremental conversions. Crucially, **only ~14% of the test geos' conversions
+> were actually caused by ads**; the rest were organic and would have happened
+> anyway. So the true **incremental CAC (~$93) is about 7× the naive CAC (~$13)**
+> that last-touch attribution would report.
+
+**What stands out**
+
+- **Incrementality is the honest counterweight to attribution.** Day 3 showed how
+  attribution *splits* credit; Day 6 shows how much of that credit is real. A
+  channel can look cheap on last-touch and still be a poor *incremental* buy.
+- **Power analysis prevents false reads.** Committing to a sample size up front is
+  what stops a team from stopping a test early on noise — the most common way A/B
+  programmes mislead themselves.
+- **Distribution-free where it matters.** With only ~25 geos per arm, a permutation
+  test avoids leaning on normality assumptions that small samples don't earn.
+- **Tested.** The inferential code is unit-tested for correctness and internal
+  consistency (e.g. the sample-size and power functions must agree), because
+  wrong statistics produce confident wrong decisions.
+
+---
+
 ## Roadmap
 
 | Day | Focus |
@@ -296,7 +354,7 @@ absorb.
 | **3** | **Attribution — first / last / linear / time-decay / position-based / data-driven (Markov)** ✅ |
 | **4** | **LTV, retention cohorts, payback period, LTV:CAC** ✅ |
 | **5** | **Growth opportunities, anomaly detection, budget reallocation** ✅ |
-| 6 | CRO & experimentation — incrementality, geo-holdout lift, sample-size |
+| **6** | **CRO & experimentation — A/B test, power analysis, geo-holdout incrementality (+ pytest)** ✅ |
 | 7 | Streamlit executive dashboard + written report |
 
 ---
@@ -327,6 +385,8 @@ attribution.py          Day 3 six-model multi-touch attribution (incl. Markov)
 ltv_retention.py        Day 4 retention cohorts, LTV, payback & LTV:CAC
 anomaly_detection.py    Day 5 rolling z-score spend-anomaly detection
 budget_optimizer.py     Day 5 opportunity scan & budget reallocation
+experiment_stats.py     Day 6 stats core (two-proportion test, power, permutation)
+experimentation.py      Day 6 A/B test, measurement plan & geo-holdout lift
 sql_cohorts.py          runs the cohort / LTV / payback SQL queries
 sql_analysis.py         loads the CSVs into SQLite and runs the named queries
 sql_views.py            builds the unit-economics SQL views and materialises them
