@@ -1,0 +1,12 @@
+[project]
+name = "marketing-analytics-attribution"
+version = "0.1.0"
+description = "End-to-end marketing/growth analytics: channel performance, unit economics, attribution, LTV, budget optimisation and experimentation."
+authors = [{ name = "Muhammad Nasiruddin" }]
+requires-python = ">=3.9"
+readme = "README.md"
+license = { file = "LICENSE" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
