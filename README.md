@@ -21,6 +21,29 @@ marketing dollar go?"
 
 ---
 
+## Key results at a glance
+
+The analysis of a full year (~$3.7m spend, ~35.8k customers) turns into one
+recommendation and a set of decision-useful findings:
+
+- 💰 **Budget reallocation: +15% customers at the same spend.** A budget-neutral
+  plan (trim the loss-makers, fund the efficient channels within realistic caps)
+  is projected to lift customers **35.8k → 41.2k** and cut **blended CAC $104 → $88**.
+- 📊 **The blended 1.30 ROAS is a mirage.** Four of six channels are below
+  break-even; SEO (13.3×) and Email (6.8×) carry the average yet get <6% of spend.
+- 🎯 **Last-touch attribution is provably biased** — it over-credits Paid Search
+  by **+46%** and under-credits Display by **−79%** vs a data-driven Markov model.
+- ⏱ **Display never pays back:** a 24-month CAC payback against a ~9-month
+  customer lifetime (LTV:CAC 0.2) — a stop, not a discount.
+- 🚨 **Anomaly detection caught $23k of wasted spend** — a 22-day Brazil Paid
+  Social overspend (~3× baseline, flat conversions) found with no prior knowledge.
+- 🧪 **Incrementality ≠ attribution:** a geo-holdout test shows only ~14% of
+  test-region conversions were truly ad-caused (incremental CAC ~7× the naive figure).
+
+*(Full method and charts for each finding are in the day-by-day sections below.)*
+
+---
+
 ## The business
 
 A subscription / affiliate business that acquires users across six channels
