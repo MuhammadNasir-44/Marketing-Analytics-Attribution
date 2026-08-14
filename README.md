@@ -1,5 +1,10 @@
 # Marketing Analytics & Attribution
 
+![Python](https://img.shields.io/badge/python-3.9%2B-blue)
+![Analysis](https://img.shields.io/badge/analysis-Python%20%2B%20SQL-0891b2)
+![Tests](https://img.shields.io/badge/tests-11%20passing-16a34a)
+![License](https://img.shields.io/badge/license-MIT-ca8a04)
+
 End-to-end **marketing / growth analytics** on a realistic multi-market
 acquisition dataset: channel performance, unit economics (CAC / ROAS / LTV),
 multi-touch attribution, retention & payback, budget optimisation, anomaly
