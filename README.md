@@ -398,14 +398,21 @@ dashboard, pytest for tests.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
+# Reproduce everything (dataset -> all analyses -> SQL) in one command:
+python run_all.py
+
+# ...or run individual steps:
 python generate_data.py       # writes data/*.csv (reproducible, seeded)
 python sql_analysis.py        # runs sql/queries.sql, writes sql_output/*.csv
 python channel_performance.py # writes images/ charts + channel_summary.csv
+
+pytest                        # run the experiment-statistics test suite
 ```
 
 ## Repository layout
 
 ```
+run_all.py              reproduce the full pipeline end to end (one command)
 generate_data.py        synthetic dataset generator (spend, users, touchpoints)
 channel_performance.py  Day 1 channel analysis + charts
 unit_economics.py       Day 2 CAC / ROAS / LTV:CAC by channel, market & matrix
@@ -424,6 +431,7 @@ data/                   generated CSVs
 sql_output/             SQL query results (CSV)
 images/                 charts
 tests/                  pytest suite (from Day 6)
+pyproject.toml          project metadata + pytest configuration
 ```
 
 ---
